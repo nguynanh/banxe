@@ -4,7 +4,6 @@ local QBCore = exports['qb-core']:GetCoreObject()
 
 local function generateOID()
     local num = math.random(1, 10) .. math.random(111, 999)
-
     return 'OC' .. num
 end
 
@@ -12,8 +11,23 @@ end
 
 QBCore.Functions.CreateCallback('qb-occasions:server:getVehicles', function(_, cb)
     local result = MySQL.query.await('SELECT * FROM occasion_vehicles', {})
+    local vehiclesWithSellerInfo = {}
     if result[1] then
-        cb(result)
+        for _, vehicleData in ipairs(result) do
+            -- Lấy thông tin người bán từ bảng players dựa trên citizenid (seller)
+            local sellerInfo = MySQL.query.await('SELECT charinfo FROM players WHERE citizenid = ?', { vehicleData.seller })
+            if sellerInfo and sellerInfo[1] then
+                local charinfo = json.decode(sellerInfo[1].charinfo)
+                vehicleData.sellerName = charinfo.firstname .. ' ' .. charinfo.lastname
+                vehicleData.sellerPhone = charinfo.phone
+            else
+                -- Nếu không tìm thấy thông tin người bán, đặt mặc định
+                vehicleData.sellerName = 'Người bán không rõ'
+                vehicleData.sellerPhone = 'N/A'
+            end
+            table.insert(vehiclesWithSellerInfo, vehicleData)
+        end
+        cb(vehiclesWithSellerInfo) -- Trả về danh sách xe đã có thông tin người bán
     else
         cb(nil)
     end

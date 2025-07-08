@@ -88,7 +88,7 @@ Config.SpecialVehicleTypes = {
 
 Config.Zones = {
     ["SandyOccasions"] = {
-        BusinessName = "Vehicle Sales Contract - Larry's Vehicle Sales",
+        BusinessName = "Cửa Hàng Bán Xe - Xe Cũ Giá Như Mới",
         SellVehicle = vector4(656.5, 634.16, 128.91, 338.57),
         BuyVehicle = vector4(633.43, 641.53, 128.91, 312.83),
 

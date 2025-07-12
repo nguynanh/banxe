@@ -7,79 +7,9 @@ local SpawnZone = {}
 local EntityZones = {}
 local occasionVehicles = {}
 
--- HÀM TRỢ GIÚP ĐÃ VIẾT LẠI: Dùng logic "mặc định là Cars"
 local function getVehicleSpotType(modelName)
     if not modelName then return nil end
-    -- Kiểm tra danh sách đặc biệt trước, nếu không có thì mặc định là "Cars"
     return Config.SpecialVehicleTypes[modelName:lower()] or 'Cars'
-end
-
-local function spawnOccasionsVehicles(vehicles)
-    if not Zone or not vehicles then return end
-
-    local spotConfig = Config.Zones[Zone].VehicleSpotTypes
-    local spotCounters = {}
-    for typeName, _ in pairs(spotConfig) do
-        spotCounters[typeName] = 1
-    end
-
-    if not occasionVehicles[Zone] then occasionVehicles[Zone] = {} end
-
-    for i = 1, #vehicles, 1 do
-        local vehicle = vehicles[i]
-        local spotType = getVehicleSpotType(vehicle.model)
-
-        if spotType and spotConfig[spotType] and spotCounters[spotType] then
-            local spotIndex = spotCounters[spotType]
-            local spots = spotConfig[spotType].Spots
-
-            if spotIndex <= #spots then
-                local oSlot = spots[spotIndex]
-                local modelHash = GetHashKey(vehicle.model)
-                RequestModel(modelHash)
-                while not HasModelLoaded(modelHash) do Wait(0) end
-
-                local newVeh = CreateVehicle(modelHash, oSlot.x, oSlot.y, oSlot.z, false, false)
-                occasionVehicles[Zone][i] = {
-                    car   = newVeh,
-                    loc   = vector3(oSlot.x, oSlot.y, oSlot.z),
-                    price = vehicle.price,
-                    owner = vehicle.seller,
-                    model = vehicle.model,
-                    plate = vehicle.plate,
-                    oid   = vehicle.occasionid,
-                    desc  = vehicle.description,
-                    mods  = vehicle.mods,
-                    spotType = spotType,
-                    spotIndex = spotIndex
-                }
-
-                QBCore.Functions.SetVehicleProperties(newVeh, json.decode(vehicle.mods))
-                SetModelAsNoLongerNeeded(modelHash)
-                SetVehicleOnGroundProperly(newVeh)
-                SetEntityInvincible(newVeh, true)
-                SetEntityHeading(newVeh, oSlot.w)
-                SetVehicleDoorsLocked(newVeh, 3)
-                SetVehicleNumberPlateText(newVeh, vehicle.occasionid)
-                FreezeEntityPosition(newVeh, true)
-
-                if Config.UseTarget then
-                    if not EntityZones then EntityZones = {} end
-                    EntityZones[i] = exports['qb-target']:AddTargetEntity(newVeh, {
-                        options = {{
-                            type = 'client',
-                            event = 'qb-vehiclesales:client:OpenContract',
-                            icon = 'fas fa-car',
-                            label = Lang:t('menu.view_contract'),
-                            Contract = i
-                        }},
-                        distance = 2.0
-                    })
-                end
-                spotCounters[spotType] = spotCounters[spotType] + 1
-            end
-        end
-    end
 end
 
 local function despawnOccasionsVehicles()
@@ -87,8 +17,9 @@ local function despawnOccasionsVehicles()
 
     if Config.Zones[Zone] and Config.Zones[Zone].VehicleSpotTypes then
         for spotType, typeData in pairs(Config.Zones[Zone].VehicleSpotTypes) do
-            for _, loc in ipairs(typeData.Spots) do
-                local oldVehicle = GetClosestVehicle(loc.x, loc.y, loc.z, 1.3, 0, 70)
+            for i, spotData in ipairs(typeData.Spots) do
+                local loc = spotData.coords
+                local oldVehicle = GetClosestVehicle(loc.x, loc.y, loc.z, 5.0, 0, 70)
                 if oldVehicle then
                     QBCore.Functions.DeleteVehicle(oldVehicle)
                 end
@@ -96,16 +27,67 @@ local function despawnOccasionsVehicles()
         end
     end
 
-    if EntityZones then
+    if Config.UseTarget and EntityZones then
         for i, zoneId in pairs(EntityZones) do
-            if Config.UseTarget then
-                exports['qb-target']:RemoveZone(zoneId)
-            end
+            exports['qb-target']:RemoveZone(zoneId)
         end
     end
     EntityZones = {}
-    if occasionVehicles[Zone] then
-        occasionVehicles[Zone] = {}
+end
+
+local function spawnOccasionsVehicles(vehicles)
+    if not Zone then return end
+
+    despawnOccasionsVehicles()
+
+    occasionVehicles[Zone] = {}
+
+    for i, vehicle in ipairs(vehicles) do
+        local spotType = getVehicleSpotType(vehicle.model)
+        local spotConfig = Config.Zones[Zone].VehicleSpotTypes[spotType]
+
+        if spotConfig and spotConfig.Spots[i] then
+            local oSlot = spotConfig.Spots[i].coords
+
+            local modelHash = GetHashKey(vehicle.model)
+            RequestModel(modelHash)
+            while not HasModelLoaded(modelHash) do Wait(0) end
+
+            local newVeh = CreateVehicle(modelHash, oSlot.x, oSlot.y, oSlot.z, false, false)
+            occasionVehicles[Zone][i] = {
+                car   = newVeh,
+                loc   = vector3(oSlot.x, oSlot.y, oSlot.z),
+                price = vehicle.price,
+                owner = vehicle.seller,
+                model = vehicle.model,
+                plate = vehicle.plate,
+                oid   = vehicle.occasionid,
+                desc  = vehicle.description,
+                mods  = vehicle.mods,
+            }
+
+            QBCore.Functions.SetVehicleProperties(newVeh, json.decode(vehicle.mods))
+            SetModelAsNoLongerNeeded(modelHash)
+           -- SetEntityOnGroundProperly(newVeh)
+            SetEntityInvincible(newVeh, true)
+            SetEntityHeading(newVeh, oSlot.w)
+            SetVehicleDoorsLocked(newVeh, 3)
+            SetVehicleNumberPlateText(newVeh, vehicle.occasionid)
+            FreezeEntityPosition(newVeh, true)
+
+            if Config.UseTarget then
+                EntityZones[i] = exports['qb-target']:AddTargetEntity(newVeh, {
+                    options = {{
+                        type = 'client',
+                        event = 'qb-vehiclesales:client:OpenContract',
+                        icon = 'fas fa-car',
+                        label = Lang:t('menu.view_contract'),
+                        Contract = i
+                    }},
+                    distance = 2.0
+                })
+            end
+        end
     end
 end
 
@@ -162,22 +144,23 @@ local function SellData(data, model)
         local vehicleData = {}
         vehicleData.ent = GetVehiclePedIsUsing(PlayerPedId())
         vehicleData.model = DataReturning
-        vehicleData.plate = model
+        vehicleData.plate = QBCore.Functions.GetPlate(vehicleData.ent)
         vehicleData.mods = QBCore.Functions.GetVehicleProperties(vehicleData.ent)
         vehicleData.desc = data.desc
+
         TriggerServerEvent('qb-occasions:server:sellVehicle', data.price, vehicleData)
         sellVehicleWait(data.price)
     end, model)
 end
 
 local listen = false
-local function Listen4Control(spot)
+local function Listen4Control(index)
     listen = true
     CreateThread(function()
         while listen do
-            if IsControlJustReleased(0, 38) then -- E
-                if spot then
-                    local data = { Contract = spot }
+            if IsControlJustReleased(0, 38) then
+                if index then
+                    local data = { Contract = index }
                     TriggerEvent('qb-vehiclesales:client:OpenContract', data)
                 else
                     if IsPedInAnyVehicle(PlayerPedId(), false) then
@@ -200,14 +183,13 @@ local function CreateZones()
             name = k,
             minZ = v.MinZ,
             maxZ = v.MaxZ,
-            debugPoly = false
+            debugPoly = false,
         })
 
         SellSpot:onPlayerInOut(function(isPointInside)
             if isPointInside and Zone ~= k then
                 Zone = k
                 QBCore.Functions.TriggerCallback('qb-occasions:server:getVehicles', function(vehicles)
-                    despawnOccasionsVehicles()
                     spawnOccasionsVehicles(vehicles)
                 end)
             else
@@ -279,6 +261,7 @@ RegisterNetEvent('qb-occasions:client:SellBackCar', function()
         local vehicle = GetVehiclePedIsIn(ped, false)
         vehicleData.model = GetEntityModel(vehicle)
         vehicleData.plate = GetVehicleNumberPlateText(vehicle)
+
         QBCore.Functions.TriggerCallback('qb-occasions:server:checkVehicleOwner', function(owned, balance)
             if owned then
                 if balance < 1 then
@@ -320,7 +303,6 @@ end)
 RegisterNetEvent('qb-occasion:client:refreshVehicles', function()
     if Zone then
         QBCore.Functions.TriggerCallback('qb-occasions:server:getVehicles', function(vehicles)
-            despawnOccasionsVehicles()
             spawnOccasionsVehicles(vehicles)
         end)
     end
@@ -374,9 +356,10 @@ RegisterNetEvent('qb-vehiclesales:client:SellVehicle', function()
     end, QBCore.Functions.GetPlate(vehicle))
 end)
 
+
 RegisterNetEvent('qb-vehiclesales:client:OpenContract', function(data)
-    if not occasionVehicles[Zone] or not occasionVehicles[Zone][data.Contract] then return end
-    CurrentVehicle = occasionVehicles[Zone][data.Contract]
+    local contractIndex = data.Contract
+    CurrentVehicle = occasionVehicles[Zone][contractIndex]
     if CurrentVehicle then
         QBCore.Functions.TriggerCallback('qb-occasions:server:getSellerInformation', function(info)
             if info then
@@ -444,27 +427,23 @@ CreateThread(function()
         
         if not Config.UseTarget then
             for typeName, typeData in pairs(cars.VehicleSpotTypes) do
-                for spotIndex, spotData in ipairs(typeData.Spots) do
-                    local VehicleZones = BoxZone:Create(vector3(spotData.x, spotData.y, spotData.z), 4.3, 3.6, {
-                        name = 'VehicleSpot' .. k .. typeName .. spotIndex,
+                for i, spotData in ipairs(typeData.Spots) do
+                    local VehicleZones = BoxZone:Create(vector3(spotData.coords.x, spotData.coords.y, spotData.coords.z), 4.3, 3.6, {
+                        name = 'VehicleSpot' .. k .. typeName .. i,
                         debugPoly = false,
-                        minZ = spotData.z - 2,
-                        maxZ = spotData.z + 2,
+                        minZ = spotData.coords.z - 2,
+                        maxZ = spotData.coords.z + 2,
                     })
 
                     VehicleZones:onPlayerInOut(function(isPointInside)
                         local wasListening = listen
                         listen = false
                         if isPointInside then
-                            if occasionVehicles[k] then
-                                for i, vehData in pairs(occasionVehicles[k]) do
-                                    if vehData.spotType == typeName and vehData.spotIndex == spotIndex then
-                                        exports['qb-core']:DrawText(Lang:t('menu.view_contract_int'), 'left')
-                                        TextShown = true
-                                        Listen4Control(i)
-                                        return
-                                    end
-                                end
+                            if occasionVehicles[k] and occasionVehicles[k][i] then
+                                exports['qb-core']:DrawText(Lang:t('menu.view_contract_int'), 'left')
+                                TextShown = true
+                                Listen4Control(i)
+                                return
                             end
                         end
                         if wasListening and TextShown then
@@ -499,28 +478,25 @@ AddEventHandler('onResourceStop', function(resourceName)
         despawnOccasionsVehicles()
     end
 end)
--- THÊM VÀO CUỐI TỆP client/main.lua
+
 CreateThread(function()
     while true do
         Wait(0)
-        -- Lặp qua tất cả các khu vực bán xe đã cấu hình
         for _, zoneData in pairs(Config.Zones) do
             local sellCoords = zoneData.SellVehicle
             local distance = #(GetEntityCoords(PlayerPedId()) - sellCoords.xyz)
 
-            -- Chỉ vẽ marker khi người chơi ở gần để tiết kiệm tài nguyên
             if distance < 100.0 then
                 DrawMarker(
-                    1, -- Loại marker (1 là hình trụ đứng)
-                    sellCoords.x, sellCoords.y, sellCoords.z - 0.98, -- Tọa độ (hạ thấp một chút cho đẹp)
-                    0.0, 0.0, 0.0, -- Hướng
-                    0.0, 0.0, 0.0, -- Góc xoay
-                    3.0, 3.0, 1.0, -- Kích thước (rộng, dài, cao)
-                    185, 230, 185, 255, -- Màu sắc (Vàng, trong suốt)
-                    false, -- Hiệu ứng nhấp nháy lên xuống
-                    false, -- Không xoay theo camera
-                    2,
+                    1,
+                    sellCoords.x, sellCoords.y, sellCoords.z - 0.98,
+                    0.0, 0.0, 0.0,
+                    0.0, 0.0, 0.0,
+                    3.0, 3.0, 1.0,
+                    185, 230, 185, 255,
                     false,
+                    false,
+                    2,
                     nil, nil,
                     false
                 )
